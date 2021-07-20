@@ -1,0 +1,147 @@
+import pandas as pd    
+data = [['Scott', 50], ['Jeff', 45], ['Thomas', 54],['Ann',34]] 
+pandasDF = pd.DataFrame(data, columns = ['Name', 'Age']) 
+from pyspark.sql import SparkSession
+
+spark = SparkSession.builder.master("local[1]").appName("SparkByExamples.com") \
+    .getOrCreate()
+
+sparkDF=spark.createDataFrame(pandasDF) 
+#sparkDF=spark.createDataFrame(pandasDF.astype(str)) 
+from pyspark.sql.types import StructType,StructField, StringType, IntegerType
+mySchema = StructType([ StructField("First Name", StringType(), True)\
+                       ,StructField("Age", IntegerType(), True)])
+sparkDF2 = spark.createDataFrame(pandasDF,schema=mySchema)
+
+data = [("James","Smith","USA","CA"),("Michael","Rose","USA","NY"), \
+    ("Robert","Williams","USA","CA"),("Maria","Jones","USA","FL") \
+  ]
+columns=["firstname","lastname","country","state"]
+df=spark.createDataFrame(data=data,schema=columns)
+states1=df.rdd.map(lambda x: x[3]).collect()
+
+data = [('James','Smith','M',3000),
+  ('Anna','Rose','F',4100),
+  ('Robert','Williams','M',6200), 
+]
+
+columns = ["firstname","lastname","gender","salary"]
+df = spark.createDataFrame(data=data, schema = columns)
+
+if 'salary1' not in df.columns:
+    print("aa")
+    
+from pyspark.sql.functions import lit
+df.withColumn("bonus_percent", lit(0.3)) \
+  .show()
+
+# Add column using select
+df.select("firstname","salary", lit(0.3).alias("bonus")).show()
+df.select("firstname","salary", lit(df.salary * 0.3).alias("bonus_amount")).show()
+df.select("firstname","salary", current_date().alias("today_date")).show()
+
+#Add columns using SQL
+df.createOrReplaceTempView("PER")
+spark.sql("select firstname,salary, '0.3' as bonus from PER").show()
+spark.sql("select firstname,salary, salary * 0.3 as bonus_amount from PER").show()
+spark.sql("select firstname,salary, current_date() as today_date from PER").show()
+spark.sql("select firstname,salary, " +
+          "case salary when salary < 4000 then 'A' "+
+          "else 'B' END as grade from PER").show()
+		  
+data = [("1","2019-07-01"),("2","2019-06-24"),("3","2019-08-24")]
+
+df=spark.createDataFrame(data=data,schema=["id","date"])
+
+from pyspark.sql.functions import *
+
+df.select(
+      col("date"),
+      current_date().alias("current_date"),
+      datediff(current_date(),col("date")).alias("datediff")
+    ).show()
+
+df.withColumn("datesDiff", datediff(current_date(),col("date"))) \
+  .withColumn("montsDiff", months_between(current_date(),col("date"))) \
+  .withColumn("montsDiff_round",round(months_between(current_date(),col("date")),2)) \
+  .withColumn("yearsDiff",months_between(current_date(),col("date"))/lit(12)) \
+  .withColumn("yearsDiff_round",round(months_between(current_date(),col("date"))/lit(12),2)) \
+  .show()
+  
+  
+dept = [("Finance",10), \
+    ("Marketing",20), \
+    ("Sales",30), \
+    ("IT",40) \
+  ]
+deptColumns = ["dept_name","dept_id"]
+deptDF = spark.createDataFrame(data=dept, schema = deptColumns)
+deptDF.printSchema()
+deptDF.show(truncate=False)
+  
+empDF.join(deptDF,empDF.emp_dept_id ==  deptDF.dept_id,"inner") \
+     .show(truncate=False)
+
+df.orderBy(col("department"),col("state")).show(truncate=False)
+
+df.sort(df.department.asc(),df.state.asc()).show(truncate=False)
+
+df.withColumnRenamed("dob","DateOfBirth").printSchema()
+
+from pyspark.sql.functions import when,col
+df2 = df.withColumn("new_gender", when(df.gender == "M","Male")
+                                 .when(df.gender == "F","Female")
+                                 .when(df.gender.isNull() ,"")
+                                 .otherwise(df.gender))
+								 
+								 
+@udf(returnType=StringType()) 
+def upperCase(str):
+    return str.upper()
+
+upperCaseUDF = udf(lambda z:upperCase(z),StringType())    
+
+df.withColumn("Cureated Name", upperCase(col("Name"))) \
+.show(truncate=False)
+
+from pyspark.sql.window import Window
+from pyspark.sql.functions import row_number
+windowSpec  = Window.partitionBy("department").orderBy("salary")
+
+df.withColumn("row_number",row_number().over(windowSpec)) \
+    .show(truncate=False)
+
+from pyspark.sql.functions import rank
+df.withColumn("rank",rank().over(windowSpec)) \
+    .show()
+
+from pyspark.sql.functions import dense_rank
+df.withColumn("dense_rank",dense_rank().over(windowSpec)) \
+    .show()
+	
+windowSpecAgg  = Window.partitionBy("department")
+from pyspark.sql.functions import col,avg,sum,min,max,row_number 
+df.withColumn("row",row_number().over(windowSpec)) \
+  .withColumn("avg", avg(col("salary")).over(windowSpecAgg)) \
+  .withColumn("sum", sum(col("salary")).over(windowSpecAgg)) \
+  .withColumn("min", min(col("salary")).over(windowSpecAgg)) \
+  .withColumn("max", max(col("salary")).over(windowSpecAgg)) \
+  .where(col("row")==1).select("department","avg","sum","min","max") \
+  .show()
+  
+  
+ arrayData = [
+        ('James',['Java','Scala'],{'hair':'black','eye':'brown'}),
+        ('Michael',['Spark','Java',None],{'hair':'brown','eye':None}),
+        ('Robert',['CSharp',''],{'hair':'red','eye':''}),
+        ('Washington',None,None),
+        ('Jefferson',['1','2'],{})
+        ]
+df = spark.createDataFrame(data=arrayData, schema = ['name','knownLanguages','properties'])
+df.printSchema()
+df.show()
+
+from pyspark.sql.functions import explode
+df2 = df.select(df.name,explode(df.knownLanguages))
+df2.printSchema()
+df2.show()
